@@ -1,0 +1,14 @@
+general:
+  logdir: /tmp/
+  aliases:
+  defaultVals:
+devices:
+  FPGA1: FPGA
+  NiDAC: NiDAC
+backends:
+  FPGA:
+    driver: NaCsCtl.Backends.FPGA.FPGABackend
+    urls:
+      FPGA1: http://nacsctl.nigrp.org/fastcgi/molecube
+  NiDAC:
+    driver: NaCsCtl.Backends.NI.NiDACBackend
