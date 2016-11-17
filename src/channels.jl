@@ -14,8 +14,6 @@
 
 module Channels
 
-import ..NullRef
-
 # None of the fields should be mutated after construction
 immutable Node
     name::String
@@ -75,7 +73,7 @@ function Base.show(io::IO, node::Node)
     return
 end
 
-function ensure_node(root::Node, path)
+function Base.getindex(root::Node, path::AbstractVector)
     node = root
     for name in path
         children = node.children
@@ -88,30 +86,26 @@ function ensure_node(root::Node, path)
     return node
 end
 
-function find_node(root::Node, path)
-    node = root
-    for name::String in path
-        children = node.children
-        if name in keys(children)
-            node = children[name]
-        else
-            return NullRef{Node}()
-        end
-    end
-    return NullRef(node)
-end
-
-function find_node(root::Node, name::String)
+function Base.getindex(root::Node, name::String)
     children = root.children
     if name in keys(children)
         return children[name]
     else
-        return NullRef{Node}()
+        return children[name] = Node(name, root)
     end
 end
 
-function Base.getindex(root::Node, name::String)
-    return root.children[name]
+_to_node(root::Node, node::Node) = node
+_to_node(root::Node, node) = root[node]
+
+function Base.setindex!(root::Node, src, dest::AbstractVector)
+    dest_parent_node = root[@view dest[1:(end - 1)]]
+    children = dest_parent_node.children
+    name = dest[end]
+    if name in keys(children)
+        throw(ArgumentError("Overwriting existing channel"))
+    end
+    return children[name] = _to_node(root, src)
 end
 
 end
