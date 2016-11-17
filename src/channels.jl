@@ -42,6 +42,21 @@ function get_path(node::Node)
     return push!(parent_path, node.name)
 end
 
+function show_link(io::IO, child::Node)
+    print(io, " -> [")
+    link_path = get_path(child)
+    first = true
+    for name in get_path(child)
+        if !first
+            print(io, ", ")
+        end
+        first = false
+        show(io, name)
+    end
+    print(io, "]")
+    return
+end
+
 function Base.show(io::IO, node::Node)
     if is_root(node)
         print(io, "Node(children=[")
@@ -65,8 +80,7 @@ function Base.show(io::IO, node::Node)
         first = false
         show(io, name)
         if name != child.name
-            print(io, " -> ")
-            show(io, get_path(child))
+            show_link(io, child)
         end
     end
     print(io, "])")
