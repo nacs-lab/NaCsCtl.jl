@@ -12,9 +12,11 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
-module NaCsCtl
-
-include("utils.jl")
-include("channels.jl")
-
+immutable NullRef{T}
+    x::T
+    NullRef() = new()
+    NullRef(x) = new(x)
 end
+NullRef{T}(x::T) = NullRef{T}(x)
+@inline Base.isnull(x::NullRef) = !isdefined(x, :x)
+@inline Base.get(x::NullRef) = x.x
