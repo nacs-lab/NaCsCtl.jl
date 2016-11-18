@@ -31,3 +31,4 @@ __pycache__/
 *.table
 *.gnuplot
 *.db
+!.travis.yml
