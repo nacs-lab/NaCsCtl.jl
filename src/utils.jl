@@ -23,20 +23,40 @@ NullRef{T}(x::T) = NullRef{T}(x)
 
 abstract NamedConsts{T}
 
+function get_inttype(sz)
+    if sz == 8
+        return UInt8
+    elseif sz == 16
+        return UInt16
+    elseif sz == 32
+        return UInt32
+    elseif sz == 64
+        return UInt64
+    elseif sz == 128
+        return UInt128
+    else
+        throw(ArgumentError("Illegal size $sz"))
+    end
+end
+Base.@pure function get_inttype{T<:NamedConsts}(::Type{T})
+    return get_inttype(sizeof(T) * 8)
+end
+
+@noinline function throw_convert_error{T}(::Type{T})
+    throw(ArgumentError("invalid value for $T"))
+end
+
 function constname end
 function checkrange end
 
 Base.convert{T<:Integer,Ti}(::Type{T}, x::NamedConsts{Ti})::T =
     reinterpret(Ti, x)
 Base.write{Ti}(io::IO, x::NamedConsts{Ti}) = write(io, convert(Ti, x))
-Base.@pure function get_inttype{T<:NamedConsts}(::Type{T})
-    return get_inttype(sizeof(T))
-end
 Base.read{T<:NamedConsts}(io::IO, ::Type{T}) = T(read(io, get_inttype(T)))
 function Base.convert{T<:NamedConsts}(::Type{T}, _x::Integer)
     Ti = get_inttype(T)
     x = convert(Ti, _x)::Ti
-    checkrange(T, x) || throw(ArgumentError("invalid value for $T"))
+    checkrange(T, x) || throw_convert_error(T)
     return reinterpret(T, x)
 end
 function Base.isless{T<:NamedConsts}(v1::T, v2::T)
@@ -54,22 +74,6 @@ function Base.show(io::IO, x::NamedConsts)
         print(io, x, "::")
         Base.showcompact(io, typeof(x))
         print(io, " = ", Int(x))
-    end
-end
-
-function get_inttype(sz)
-    if sz == 8
-        return UInt8
-    elseif sz == 16
-        return UInt16
-    elseif sz == 32
-        return UInt32
-    elseif sz == 64
-        return UInt64
-    elseif sz == 128
-        return UInt128
-    else
-        throw(ArgumentError("Illegal size $sz"))
     end
 end
 
