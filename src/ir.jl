@@ -31,10 +31,24 @@ baremodule OP
 import ...@named_consts
 @named_consts 8 Type ret=1 br add sub mul fdiv cmp phi call
 end
+function opName(v::Op.Type)
+    name = constname(v)
+    if name === empty_sym
+        return :unknown
+    end
+    return name
+end
 
 baremodule Cmp
 import ...@named_consts
 @named_consts 8 Type eq gt ge lt le ne
+end
+function cmpName(v::Cmp.Type)
+    name = constname(v)
+    if name === empty_sym
+        return :unknown
+    end
+    return name
 end
 
 baremodule Builtin
@@ -55,6 +69,13 @@ import ...@named_consts
               jn, yn)
 @named_consts(8, Type, Invalid,
               F64_F64, F64_F64F64, F64_F64F64F64, F64_F64I32, F64_I32F64)
+end
+function builtinName(v::Builtin.Id)
+    name = constname(v)
+    if name === empty_sym
+        return :unknown
+    end
+    return name
 end
 
 baremodule Consts
