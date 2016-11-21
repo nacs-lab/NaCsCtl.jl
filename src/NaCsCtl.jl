@@ -16,5 +16,6 @@ module NaCsCtl
 
 include("utils.jl")
 include("channels.jl")
+include("exprs.jl")
 
 end
