@@ -198,6 +198,8 @@ const builtin_ptrs = Vector{Ptr{Void}}(Int(typemax(Builtin.Id)) + 1)
     if ptr == C_NULL
         if sym === :exp10
             ptr = cfunction(exp10, Float64, (Float64,))
+        elseif sym === :abs
+            ptr = cfunction(abs, Float64, (Float64,))
         else
             error("Cannot find function $sym")
         end
