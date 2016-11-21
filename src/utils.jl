@@ -47,7 +47,7 @@ end
 end
 
 function constname end
-function checkrange end
+validate{Ti}(x::NamedConsts{Ti}) = validate(reinterpret(Ti, x))
 
 Base.convert{T<:Integer,Ti}(::Type{T}, x::NamedConsts{Ti})::T =
     reinterpret(Ti, x)
@@ -56,7 +56,7 @@ Base.read{T<:NamedConsts}(io::IO, ::Type{T}) = T(read(io, get_inttype(T)))
 function Base.convert{T<:NamedConsts}(::Type{T}, _x::Integer)
     Ti = get_inttype(T)
     x = convert(Ti, _x)::Ti
-    checkrange(T, x) || throw_convert_error(T)
+    validate(T, x) || throw_convert_error(T)
     return reinterpret(T, x)
 end
 function Base.isless{T<:NamedConsts}(v1::T, v2::T)
@@ -89,13 +89,13 @@ function get_checkfunc{Ti}(T, ::Type{Ti}, set)
     tmax = vec[end]
     tmin = vec[1]
     common_expr = quote
-        @inline function $Base.typemin(::Type{$T})
+        $Base.@inline function $Base.typemin(::$Base.Type{$T})
             return $tmin
         end
-        @inline function $Base.typemax(::Type{$T})
+        $Base.@inline function $Base.typemax(::$Base.Type{$T})
             return $tmax
         end
-        @inline function $Base.instances(::Type{$T})
+        $Base.@inline function $Base.instances(::$Base.Type{$T})
             return ($((reinterpret(T, v) for v in vec)...),)
         end
     end
@@ -103,8 +103,9 @@ function get_checkfunc{Ti}(T, ::Type{Ti}, set)
     if length(vec) - 1 == tmax - tmin
         return quote
             $common_expr
-            @inline function $thismodule.checkrange(::Type{$T}, val::Integer)
-                return $tmin <= val <= $tmax
+            $Base.@inline function $thismodule.validate(::$Base.Type{$T},
+                                                       val::$Base.Integer)
+                return $Base.:<=($tmin, val) && $Base.:<=(val, $tmax)
             end
         end
     end
@@ -122,9 +123,11 @@ function get_checkfunc{Ti}(T, ::Type{Ti}, set)
     push!(ranges, (start_v, prev_v))
     return quote
         $common_expr
-        @inline function $thismodule.checkrange(::Type{$T}, val::Integer)
-            $((r[1] == r[2] ? :(val == $(r[1]) && return true) :
-               :($(r[1]) <= val <= $(r[2]) && return true)
+        $Base.@inline function $thismodule.validate(::$Base.Type{$T},
+                                                    val::$Base.Integer)
+            $((r[1] == r[2] ? :($Base.:(==)(val, $(r[1])) && return true) :
+               :($Base.:<=($(r[1]), val) && $Base.:<=(val, $(r[2])) &&
+                 return true)
                for r in ranges)...)
             return false
         end
