@@ -290,44 +290,240 @@ function evalBuiltin(id::Builtin.Id, args)
     end
 end
 
-# struct Function {
-#     typedef std::vector<int32_t> BB;
-#     typedef std::pair<int32_t, int32_t> InstRef;
-#     Function(Type _ret, const std::vector<Type> &args)
-#         : ret(_ret),
-#           nargs((int)args.size()),
-#           vals(args),
-#           code{BB{}},
-#           consts{}
-#     {}
-#     Function(const uint32_t*, size_t);
-#     Function(const std::vector<uint32_t> &data)
-#         : Function(data.data(), data.size())
-#     {}
-#     void dump(void) const;
-#     Type valType(int32_t id) const;
-#     TagVal evalConst(int32_t id) const
-#     {
-#         assert(id < 0);
-#         if (id == Consts::False) {
-#             return false;
-#         } else if (id == Consts::True) {
-#             return true;
-#         } else {
-#             return consts[Consts::_Offset - id];
-#         }
-#     }
-#     std::vector<uint32_t> serialize(void) const;
-#     const Type ret;
-#     const int nargs;
-#     std::vector<Type> vals;
-#     std::vector<BB> code;
-#     std::vector<TagVal> consts;
-# private:
-#     void dumpValName(int32_t id) const;
-#     void dumpVal(int32_t id) const;
-#     void dumpBB(const BB&) const;
-# };
+immutable Func
+    ret::Value.Type
+    nargs::Int32
+    vals::Vector{Value.Type}
+    code::Vector{Vector{Int32}}
+    consts::Vector{TagVal}
+    function Func(ret::Value.Type, args)
+        nargs = Int32(length(args))
+        func = Func(ret, nargs)
+        copy!(func.vals, args)
+        return func
+    end
+    function Func(ret::Value.Type, nargs::Integer)
+        vals = Vector{Value.Type}(nargs)
+        code = [Int32[]]
+        consts = TagVal[]
+        return new(ret, nargs, vals, code, consts)
+    end
+end
+
+function evalConst(func::Func, id)
+    if id == Consts.False
+        return TagVal(false)
+    elseif id == Consts.True
+        return TagVal(true)
+    else
+        return func.consts[Consts._Offset - id + 1]
+    end
+end
+
+function valType(func::Func, id)
+    if id >= 0
+        return func.vals[id + 1]
+    else
+        return evalConst(func, id).typ
+    end
+end
+
+function showValName(io::IO, func::Func, id)
+    if id >= 0
+        print(io, '%', id)
+    elseif id == Consts.False
+        print(io, "false")
+    elseif id == Consts.True
+        print(io, "true")
+    else
+        constval = evalConst(func, id)
+        val = constval.val
+        typ = constval.typ
+        if typ == Value.Int32
+            print(io, Int32(val))
+        elseif typ == Value.Float64
+            print(io, Float64(val))
+        else
+            print(io, "undef")
+        end
+    end
+    return
+end
+
+function showVal(io::IO, func::Func, id)
+    print(io, typeName(valType(func, id)), " ")
+    showValName(io, func, id)
+end
+
+function showBB(io::IO, func::Func, bb)
+    i = 1
+    len = length(bb)
+    while len >= i
+        op = OP.Type(bb[i])
+        i += 1
+        if op == OP.ret
+            print(io, "  ret ")
+            showVal(io, func, bb[i])
+            println(io)
+            i += 1
+        elseif op == OP.br
+            cond = bb[i]
+            i += 1
+            bb1 = bb[i]
+            i += 1
+            if cond == Consts.True
+                println(io, "  br L", bb1)
+            else
+                bb2 = bb[i]
+                i += 1
+                print(io, "  br ")
+                showVal(io, func, cond)
+                println(io, ", L", bb1, ", L", bb2)
+            end
+        elseif op in (OP.add, OP.sub, OP.mul, OP.fdiv)
+            res = bb[i]
+            i += 1
+            val1 = bb[i]
+            i += 1
+            val2 = bb[i]
+            i += 1
+            print(io, " ")
+            showVal(io, func, res)
+            print(io, " = ", opName(op), " ")
+            showVal(io, func, val1)
+            print(io, ", ")
+            showVal(io, func, val2)
+            println(io)
+        elseif op == OP.cmp
+            res = bb[i]
+            i += 1
+            cmptyp = Cmp.Type(bb[i])
+            i += 1
+            val1 = bb[i]
+            i += 1
+            val2 = bb[i]
+            i += 1
+            print(io, "  ")
+            showVal(io, func, res)
+            print(io, " = ", opName(op), " ", cmpName(cmptyp), " ")
+            showVal(io, func, val1)
+            print(io, ", ")
+            showVal(io, func, val2)
+            println(io)
+        elseif op == OP.phi
+            res = bb[i]
+            i += 1
+            nargs = bb[i]
+            i += 1
+            print(io, "  ")
+            showVal(io, func, res)
+            print(io, " = ", opName(op), " ")
+            for j in 0:(nargs - 1)
+                if j != 0
+                    print(io, ", [ L")
+                else
+                    print(io, "[ L")
+                end
+                print(io, bb[i + 2 * j + 1], ": ")
+                showVal(io, func, bb[i + 2 * j + 2])
+                print(io, " ]")
+            end
+            i += 2 * nargs
+            println(io)
+        elseif op == OP.call
+            res = bb[i]
+            i += 1
+            id = Builtin.Id(bb[i])
+            i += 1
+            nargs = bb[i]
+            i += 1
+            print(io, "  ")
+            showVal(io, func, res)
+            print(io, " = ", opName(op), " ", builtinName(id), "(")
+            for j in 0:(nargs - 1)
+                if j != 0
+                    print(io, ", ")
+                end
+                showVal(io, func, bb[i + j])
+            end
+            i += nargs;
+            println(io, ")")
+        else
+            println(io, "  unknown op: ", Int8(op))
+        end
+    end
+end
+
+function Base.show(io::IO, func::Func)
+    print(io, typeName(func.ret), " (")
+    for i in 0:(func.nargs - 1)
+        if i != 0
+            print(io, ", ")
+        end
+        print(io, typeName(valType(func, i)), " ")
+        showValName(io, func, i);
+    end
+    println(io, ") {")
+    code = func.code
+    for i in 1:length(code)
+        println(io, "L", i - 1, ":")
+        showBB(io, func, code[i])
+    end
+    println(io, "}")
+    return
+end
+
+function Base.write(io::IO, func::Func)
+    # [ret][nargs][nvals][vals x nvals]
+    # [nconsts][consts x nconsts]
+    # [nbb][[nword][code x nword] x nbb]
+    write(io, Int32(func.ret))
+    write(io, Int32(func.nargs))
+    copy_vector = function (vec)
+        write(io, Int32(length(vec)))
+        write(io, vec)
+    end
+    copy_vector(func.vals)
+    write(io, Int32(length(func.consts)))
+    for c in func.consts
+        write(io, Int32(c.typ))
+        write(io, reinterpret(UInt64, c.val))
+    end
+    write(io, Int32(length(func.code)))
+    for c in func.code
+        copy_vector(c)
+    end
+end
+
+function Base.read(io::IO, ::Type{Func})
+    ret = Value.Type(read(io, Int32))
+    nargs = read(io, Int32)
+    func = Func(ret, nargs)
+    read_vector = function (vec)
+        sz = read(io, Int32)
+        resize!(vec, sz)
+        read!(io, vec)
+    end
+    read_vector(func.vals)
+    nconsts = read(io, Int32)
+    consts = func.consts
+    resize!(consts, nconsts)
+    for i in 1:nconsts
+        consts[i] = TagVal(Value.Type(read(io, Int32)),
+                           reinterpret(GenVal, read(io, Int64)))
+    end
+    nbb = read(io, Int32)
+    code = func.code
+    resize!(code, nbb)
+    for i in 1:nbb
+        if i == 1
+            bb = code[1]
+        else
+            bb = code[i] = Int32[]
+        end
+        read_vector(bb)
+    end
+end
 
 # class NACS_EXPORT Builder {
 # public:
@@ -401,264 +597,6 @@ end
 #     const Function &m_f;
 #     std::vector<GenVal> m_vals;
 # };
-
-# NACS_EXPORT void TagVal::dump(void) const
-# {
-#     std::cout << typeName(typ) << " ";
-#     switch (typ) {
-#     case Type::Bool:
-#         std::cout << (val.b ? "true" : "false");
-#         break;
-#     case Type::Int32:
-#         std::cout << val.i32;
-#         break;
-#     case Type::Float64:
-#         std::cout << val.f64;
-#         break;
-#     default:
-#         std::cout << "undef";
-#     }
-#     std::cout << std::endl;
-# }
-
-# void Function::dumpValName(int32_t id) const
-# {
-#     if (id >= 0) {
-#         std::cout << "%" << id;
-#     } else if (id == Consts::False) {
-#         std::cout << "false";
-#     } else if (id == Consts::True) {
-#         std::cout << "true";
-#     } else {
-#         auto &constval = consts[Consts::_Offset - id];
-#         auto val = constval.val;
-#         switch (constval.typ) {
-#         case Type::Int32:
-#             std::cout << val.i32;
-#             break;
-#         case Type::Float64:
-#             std::cout << val.f64;
-#             break;
-#         default:
-#             std::cout << "undef";
-#         }
-#     }
-# }
-
-# NACS_EXPORT Type Function::valType(int32_t id) const
-# {
-#     if (id >= 0) {
-#         return vals[id];
-#     } else if (id == Consts::False || id == Consts::True) {
-#         return Type::Bool;
-#     } else {
-#         return consts[Consts::_Offset - id].typ;
-#     }
-# }
-
-# void Function::dumpVal(int32_t id) const
-# {
-#     std::cout << typeName(valType(id)) << " ";
-#     dumpValName(id);
-# }
-
-# void Function::dumpBB(const BB &bb) const
-# {
-#     const int32_t *pc = bb.data();
-#     const int32_t *end = pc + bb.size();
-#     while (end > pc) {
-#         auto op = Opcode(*pc);
-#         pc++;
-#         switch (op) {
-#         case Opcode::Ret:
-#             std::cout << "  ret ";
-#             dumpVal(*pc);
-#             std::cout << std::endl;
-#             pc++;
-#             break;
-#         case Opcode::Br: {
-#             auto cond = *pc;
-#             pc++;
-#             auto bb1 = *pc;
-#             pc++;
-#             if (cond == Consts::True) {
-#                 std::cout << "  br L" << bb1;
-#             } else {
-#                 auto bb2 = *pc;
-#                 pc++;
-#                 std::cout << "  br ";
-#                 dumpVal(cond);
-#                 std::cout << ", L" << bb1 << ", L" << bb2;
-#             }
-#             std::cout << std::endl;
-#             break;
-#         }
-#         case Opcode::Add:
-#         case Opcode::Sub:
-#         case Opcode::Mul:
-#         case Opcode::FDiv: {
-#             auto res = *pc;
-#             pc++;
-#             auto val1 = *pc;
-#             pc++;
-#             auto val2 = *pc;
-#             pc++;
-#             std::cout << "  ";
-#             dumpVal(res);
-#             std::cout << " = " << opName(op) << " ";
-#             dumpVal(val1);
-#             std::cout << ", ";
-#             dumpVal(val2);
-#             std::cout << std::endl;
-#             break;
-#         }
-#         case Opcode::Cmp: {
-#             auto res = *pc;
-#             pc++;
-#             auto cmptyp = CmpType(*pc);
-#             pc++;
-#             auto val1 = *pc;
-#             pc++;
-#             auto val2 = *pc;
-#             pc++;
-#             std::cout << "  ";
-#             dumpVal(res);
-#             std::cout << " = " << opName(op) << " " << cmpName(cmptyp) << " ";
-#             dumpVal(val1);
-#             std::cout << ", ";
-#             dumpVal(val2);
-#             std::cout << std::endl;
-#             break;
-#         }
-#         case Opcode::Phi: {
-#             auto res = *pc;
-#             pc++;
-#             auto nargs = *pc;
-#             pc++;
-#             std::cout << "  ";
-#             dumpVal(res);
-#             std::cout << " = " << opName(op) << " ";
-#             for (int i = 0;i < nargs;i++) {
-#                 if (i != 0) {
-#                     std::cout << ", [ L";
-#                 } else {
-#                     std::cout << "[ L";
-#                 }
-#                 std::cout << pc[2 * i] << ": ";
-#                 dumpVal(pc[2 * i + 1]);
-#                 std::cout << " ]";
-#             }
-#             pc += 2 * nargs;
-#             std::cout << std::endl;
-#             break;
-#         }
-#         case Opcode::Call: {
-#             auto res = *pc;
-#             pc++;
-#             auto id = Builtins(*pc);
-#             pc++;
-#             auto nargs = *pc;
-#             pc++;
-#             std::cout << "  ";
-#             dumpVal(res);
-#             std::cout << " = " << opName(op) << " " << builtinName(id) << "(";
-#             for (int i = 0;i < nargs;i++) {
-#                 if (i != 0) {
-#                     std::cout << ", ";
-#                 }
-#                 dumpVal(pc[i]);
-#             }
-#             pc += nargs;
-#             std::cout << ")" << std::endl;
-#             break;
-#         }
-#         default:
-#             std::cout << "  unknown op: " << uint8_t(op) << std::endl;
-#             break;
-#         }
-#     }
-# }
-
-# NACS_EXPORT void Function::dump(void) const
-# {
-#     std::cout << typeName(ret) << " (";
-#     for (int i = 0;i < nargs;i++) {
-#         if (i != 0)
-#             std::cout << ", ";
-#         std::cout << typeName(valType(i)) << " ";
-#         dumpValName(i);
-#     }
-#     std::cout << ") {" << std::endl;
-#     for (size_t i = 0;i < code.size();i++) {
-#         std::cout << "L" << i << ":" << std::endl;
-#         dumpBB(code[i]);
-#     }
-#     std::cout << "}" << std::endl;
-# }
-
-# NACS_EXPORT std::vector<uint32_t> Function::serialize(void) const
-# {
-#     // [ret][nargs][nvals][vals x nvals]
-#     // [nconsts][consts x nconsts]
-#     // [nbb][[nword][code x nword] x nbb]
-#     std::vector<uint32_t> res{uint32_t(ret), uint32_t(nargs)};
-#     auto copy_vector = [&res] (auto vec) {
-#         res.push_back(uint32_t(vec.size()));
-#         uint32_t idx = (uint32_t)res.size();
-#         size_t elsz = sizeof(typename decltype(vec)::value_type);
-#         res.resize(idx + (vec.size() * elsz + 3) / 4);
-#         memcpy(&res[idx], vec.data(), vec.size() * elsz);
-#     };
-#     copy_vector(vals);
-#     {
-#         res.push_back(uint32_t(consts.size()));
-#         uint32_t idx = (uint32_t)res.size();
-#         res.resize(idx + consts.size() * 3);
-#         for (size_t i = 0;i < consts.size();i++) {
-#             res[idx + i * 3] = uint32_t(consts[i].typ);
-#             memcpy(&res[idx + i * 3 + 1], &(consts[i].val), sizeof(GenVal));
-#         }
-#     }
-#     res.push_back(uint32_t(code.size()));
-#     for (size_t i = 0;i < code.size();i++)
-#         copy_vector(code[i]);
-#     return res;
-# }
-
-# NACS_EXPORT Function::Function(const uint32_t *data, size_t)
-#     : ret(Type(data[0])),
-#       nargs(data[1]),
-#       vals{},
-#       code{},
-#       consts{}
-# {
-#     uint32_t cursor = 2;
-#     auto read_vector = [data, &cursor] (auto &vec) {
-#         uint32_t size = data[cursor];
-#         cursor++;
-#         vec.resize(size);
-#         int32_t elsz = sizeof(typename std::remove_reference_t<
-#                               decltype(vec)>::value_type);
-#         memcpy(vec.data(), &data[cursor], size * elsz);
-#         cursor += (size * elsz + 3) / 4;
-#     };
-#     read_vector(vals);
-#     {
-#         uint32_t size = data[cursor];
-#         cursor++;
-#         consts.resize(size);
-#         for (size_t i = 0;i < size;i++) {
-#             consts[i].typ = Type(data[cursor + i * 3]);
-#             memcpy(&(consts[i].val), &data[cursor + i * 3 + 1], 8);
-#         }
-#         cursor += size * 3;
-#     }
-#     code.resize(data[cursor]);
-#     cursor++;
-#     for (size_t i = 0;i < code.size();i++) {
-#         read_vector(code[i]);
-#     }
-# }
 
 # int32_t *Builder::addInst(Opcode op, size_t nop)
 # {

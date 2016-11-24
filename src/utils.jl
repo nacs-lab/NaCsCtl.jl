@@ -189,6 +189,10 @@ macro named_consts(sz, typename::Symbol, vals...)
             $((:(x === $name && return $(QuoteNode(name))) for name in names)...)
             return $(QuoteNode(Symbol("")))
         end
+        function $(esc(typename))(_x::Integer)
+            x = convert($inttype, _x)::$inttype
+            return reinterpret(T, x)
+        end
         $Core.eval(current_module(),
                    get_checkfunc($(esc(typename)), $inttype, $valset))
     end
