@@ -102,16 +102,18 @@ t32_size = 4
     @test constname(T32(2)) === Symbol("")
 end
 
-@named_consts sizeof(T32) * 2 * 8 T64 A64 B64 C64=sizeof(T64) - B64 D64
+@named_consts sizeof(T32) * 2 * 8 T64 A64 B64 C64=sizeof(T64) - B64 - 6 D64
 @testset "Size 64" begin
     @test sizeof(T64) == 8
     @test A64::T64 == 0
     @test B64::T64 == 1
-    @test C64::T64 == 7
-    @test D64::T64 == 8
+    @test C64::T64 == 1
+    @test D64::T64 == 2
     @test typemin(T64) === A64
     @test typemax(T64) === D64
-    @test instances(T64) == (A64, B64, C64, D64)
+    @test instances(T64) == (A64, B64, D64)
+
+    @test B64 === C64
 
     @test validate(A64)
     @test validate(B64)
@@ -120,19 +122,16 @@ end
 
     @test validate(T64, 0)
     @test validate(T64, 1)
-    @test validate(T64, 7)
-    @test validate(T64, 8)
+    @test validate(T64, 2)
 
     @test !validate(T64(-1))
-    @test !validate(T64(2))
-    @test !validate(T64(6))
-    @test !validate(T64(9))
+    @test !validate(T64(3))
 
     @test constname(A64) === :A64
     @test constname(B64) === :B64
-    @test constname(C64) === :C64
+    @test constname(C64) === :B64
     @test constname(D64) === :D64
-    @test constname(T64(2)) === Symbol("")
+    @test constname(T64(3)) === Symbol("")
 end
 
 @named_consts sizeof(T64) * 2 * 8 T128 A128 B128 C128=sizeof(T128) - B128 D128
