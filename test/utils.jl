@@ -6,9 +6,13 @@ import NaCsCtl: @named_consts, validate, constname
 @testset "Size 8" begin
     @test sizeof(T8) == 1
     @test A8::T8 == 0
+    @test convert(Int, A8) === 0
     @test B8::T8 == 1
+    @test convert(Int, B8) === 1
     @test C8::T8 == 4
+    @test convert(Int, C8) === 4
     @test D8::T8 == 5
+    @test convert(Int, D8) === 5
     @test typemin(T8) === A8
     @test typemax(T8) === D8
     @test instances(T8) == (A8, B8, C8, D8)
@@ -46,9 +50,13 @@ end
 @testset "Size 16" begin
     @test sizeof(T16) == 2
     @test A16::T16 == 0
+    @test convert(Int, A16) === 0
     @test B16::T16 == 1
+    @test convert(Int, B16) === 1
     @test C16::T16 == -7
+    @test convert(Int, C16) === -7
     @test D16::T16 == -6
+    @test convert(Int, D16) === -6
     @test typemin(T16) === C16
     @test typemax(T16) === B16
     @test instances(T16) == (C16, D16, A16, B16)
@@ -87,9 +95,13 @@ t32_size = 4
 @testset "Size 32" begin
     @test sizeof(T32) == 4
     @test A32::T32 == 0
+    @test convert(Int, A32) === 0
     @test B32::T32 == 1
+    @test convert(Int, B32) === 1
     @test C32::T32 == 5
+    @test convert(Int, C32) === 5
     @test D32::T32 == 6
+    @test convert(Int, D32) === 6
     @test typemin(T32) === A32
     @test typemax(T32) === D32
     @test instances(T32) == (A32, B32, C32, D32)
@@ -127,9 +139,13 @@ end
 @testset "Size 64" begin
     @test sizeof(T64) == 8
     @test A64::T64 == 0
+    @test convert(Int, A64) === 0
     @test B64::T64 == 1
+    @test convert(Int, B64) === 1
     @test C64::T64 == 1
+    @test convert(Int, C64) === 1
     @test D64::T64 == 2
+    @test convert(Int, D64) === 2
     @test typemin(T64) === A64
     @test typemax(T64) === D64
     @test instances(T64) == (A64, B64, D64)
@@ -166,9 +182,13 @@ end
 @testset "Size 128" begin
     @test sizeof(T128) == 16
     @test A128::T128 == 0
+    @test convert(Int, A128) === 0
     @test B128::T128 == 1
+    @test convert(Int, B128) === 1
     @test C128::T128 == 15
+    @test convert(Int, C128) === 15
     @test D128::T128 == 16
+    @test convert(Int, D128) === 16
     @test typemin(T128) === A128
     @test typemax(T128) === D128
     @test instances(T128) == (A128, B128, C128, D128)
