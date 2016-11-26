@@ -48,7 +48,7 @@ end
     IR.setCurBB(builder, pass_bb)
     IR.createRet(builder, 1)
     IR.setCurBB(builder, fail_bb)
-    IR.createRet(builder, IR.getConstFloat(builder, 3.4))
+    IR.createRet(builder, IR.getConstFloat(builder, 3.5f0))
     @test string(get(builder)) == """
 Float64 (Bool %0, Float64 %1) {
 L0:
@@ -56,7 +56,7 @@ L0:
 L1:
   ret Float64 %1
 L2:
-  ret Float64 3.4
+  ret Float64 3.5
 }
 """
 end
