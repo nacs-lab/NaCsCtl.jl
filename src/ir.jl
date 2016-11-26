@@ -525,50 +525,272 @@ function Base.read(io::IO, ::Type{Func})
     end
 end
 
-# class NACS_EXPORT Builder {
-# public:
-#     Builder(Type ret, std::vector<Type> args)
-#         : m_f(ret, args),
-#           m_cur_bb(0),
-#           const_ints{},
-#           const_floats{}
-#     {}
-#     Function &get(void)
-#     {
-#         return m_f;
-#     }
-#     int32_t getConst(TagVal val);
-#     int32_t getConstInt(int32_t val);
-#     int32_t getConstFloat(double val);
+type Builder
+    f::Func
+    cur_bb::Int
+    const_ints::Dict{Int32,Int}
+    const_floats::Dict{Float64,Int}
+    Builder(ret::Value.Type, args) =
+        new(Func(ret, args), 0, Dict{Int32,Int}(), Dict{Float64,Int}())
+end
 
-#     int32_t newBB(void);
-#     int32_t &curBB(void);
+Base.get(builder::Builder) = builder.f
 
-#     void createRet(int32_t val);
-#     void createBr(int32_t br);
-#     void createBr(int32_t cond, int32_t bb1, int32_t bb2);
-#     int32_t createAdd(int32_t val1, int32_t val2);
-#     int32_t createSub(int32_t val1, int32_t val2);
-#     int32_t createMul(int32_t val1, int32_t val2);
-#     int32_t createFDiv(int32_t val1, int32_t val2);
-#     int32_t createCmp(CmpType cmptyp, int32_t val1, int32_t val2);
-#     std::pair<int32_t, Function::InstRef> createPhi(Type typ, int ninputs);
-#     void addPhiInput(Function::InstRef phi, int32_t bb, int32_t val);
-#     int32_t createCall(Builtins id, int32_t nargs, const int32_t *args);
-#     int32_t createCall(Builtins id, const std::vector<int32_t> &args)
-#     {
-#         return createCall(id, (int32_t)args.size(), args.data());
-#     }
-# private:
-#     int32_t *addInst(Opcode op, size_t nop);
-#     int32_t *addInst(Opcode op, size_t nop, Function::InstRef &inst);
-#     int32_t newSSA(Type typ);
-#     int32_t createPromoteOP(Opcode op, int32_t val1, int32_t val2);
-#     Function m_f;
-#     int32_t m_cur_bb;
-#     std::map<int32_t, int> const_ints;
-#     std::map<double, int> const_floats;
-# };
+getConstInt(builder::Builder, val::Int32) = get!(builder.const_ints, val) do
+    func = builder.f
+    consts = f.consts
+    oldlen = length(consts)
+    push!(consts, TagVal(val))
+    id = Int32(Consts._Offset - oldlen)
+    builder.const_ints[val] = id
+    return id
+end
+getConstInt(builder::Builder, val) = getConstInt(builder, Int32(val))
+
+getConstFloat(builder::Builder, val::Float64) = get!(builder.const_floats, val) do
+    func = builder.f
+    consts = f.consts
+    oldlen = length(consts)
+    push!(consts, TagVal(val))
+    id = Int32(Consts._Offset - oldlen)
+    builder.const_floats[val] = id
+    return id
+end
+getConstFloat(builder::Builder, val) = getConstFloat(builder, Float64(val))
+
+function getConst(builder::Builder, _val::TagVal)
+    typ = _val.typ
+    val = _val.val
+    if typ == Value.Bool
+        return Bool(val) ? Consts.True : Consts.False
+    elseif typ == Value.Int32
+        return getConstInt(builder, Int32(val))
+    elseif typ == Value.Float64
+        return getConstFloat(builder, Float64(val))
+    else
+        return Consts.False
+    end
+end
+
+curBB(builder::Builder) = builder.cur_bb
+function setCurBB(builder::Builder, bb)
+    builder.cur_bb = bb
+    return
+end
+
+function newBB(builder::Builder)
+    code = builder.f.code
+    id = length(code)
+    push!(code, Int32[])
+    return id
+end
+
+immutable InstRef
+    bb::Int
+    idx::Int
+end
+
+Base.:+(ref::InstRef, offset) = InstRef(ref.bb, ref.idx + offset)
+
+function Base.setindex!(builder::Builder, val, ref::InstRef)
+    bb = builder.f.code[ref.bb + 1]
+    bb[ref.idx + 1] = val
+    return
+end
+
+function Base.getindex(builder::Builder, ref::InstRef)
+    bb = builder.f.code[ref.bb + 1]
+    return bb[ref.idx + 1]
+end
+
+function addInst(builder::Builder, op::OP.Type, nop)
+    bb = builder.f.code[builder.cur_bb]
+    oldlen = length(bb)
+    ref = InstRef(builder.cur_bb, oldlen + 1)
+    resize!(bb, oldlen + nop + 1)
+    bb[oldlen + 1] = Int32(op)
+    return ref
+end
+
+function createRet(builder::Builder, val)
+    ref = addInst(builder, OP.ret, 1)
+    builder[ref] = val
+    return
+end
+
+function createBr(builder::Builder, cond, bb1, bb2)
+    if cond == Consts.True
+        ref = addInst(builder, OP.br, 2)
+    else
+        ref = addInst(builder, OP.br, 3)
+        builder[ref + 2] = bb2
+    end
+    builder[ref] = cond
+    builder[ref + 1] = bb1
+end
+createBr(builder::Builder, bb) = createBr(builder, Consts.True, bb, 0)
+
+@inline function evalBinOp(f, typ::Value.Type, val1, val2)
+    if typ == Value.Int32
+        return TagVal(f(Int32(val1), Int32(val2)))
+    elseif typ == Value.Float64
+        return TagVal(f(Float64(val1), Float64(val2)))
+    else
+        return TagVal(typ)
+    end
+end
+
+function evalCmp(cmptyp::Cmp.Type, val1, val2)
+    v1 = Float64(val1)
+    v2 = Float64(val2)
+    if cmptyp == Cmp.eq
+        return TagVal(v1 == v2)
+    elseif cmptyp == Cmp.gt
+        return TagVal(v1 > v2)
+    elseif cmptyp == Cmp.ge
+        return TagVal(v1 >= v2)
+    elseif cmptyp == Cmp.lt
+        return TagVal(v1 < v2)
+    elseif cmptyp == Cmp.le
+        return TagVal(v1 <= v2)
+    elseif cmptyp == Cmp.ne
+        return TagVal(v1 != v2)
+    else
+        return TagVal(false)
+    end
+end
+
+function newSSA(builder::Builder, typ::Value.Type)
+    vals = builder.f.vals
+    id = length(vals)
+    push!(vals, typ)
+    return id
+end
+
+function createPromoteOP(builder::Builder, op::OP.Type, val1, val2)
+    f = builder.f
+    ty1 = valType(f, val1)
+    ty2 = valType(f, val2)
+    resty = op == OP.fdiv ? Value.Float64 : max(ty1, ty2, Value.Int32)
+    if val1 < 0 && val2 < 0
+        c1 = evalConst(f, val1)
+        c2 = evalConst(f, val2)
+        if op == OP.add
+            return getConst(builder, evalBinOP(+, resty, c1, c2))
+        elseif op == OP.sub
+            return getConst(builder, evalBinOP(-, resty, c1, c2))
+        elseif op == OP.mul
+            return getConst(builder, evalBinOP(*, resty, c1, c2))
+        elseif op == OP.div
+            return getConst(builder, evalBinOP(/, resty, c1, c2))
+        end
+    end
+    ref = addInst(builder, op, 3)
+    res = newSSA(builder, resty)
+    builder[ref] = res
+    builder[ref + 1] = val1
+    builder[ref + 2] = val2
+    return res
+end
+
+createAdd(builder::Builder, val1, val2) =
+    createPromoteOP(builder, OP.add, val1, val2)
+createSub(builder::Builder, val1, val2) =
+    createPromoteOP(builder, OP.sub, val1, val2)
+createMul(builder::Builder, val1, val2) =
+    createPromoteOP(builder, OP.mul, val1, val2)
+createFDiv(builder::Builder, val1, val2) =
+    createPromoteOP(builder, OP.fdiv, val1, val2)
+
+function createCmp(builder::Builder, cmp::Cmp.Type, val1, val2)
+    if val1 < 0 && val2 < 0
+        return getConst(builder, evalCmp(cmp, evalConst(f, val1),
+                                         evalConst(f, val2)))
+    end
+    ref = addInst(builder, OP.cmp, 4)
+    res = newSSA(builder, Value.Bool)
+    builder[res] = res
+    builder[res + 1] = cmp
+    builder[res + 2] = val1
+    builder[res + 3] = val2
+    return res;
+end
+
+function createPhi(builder::Builder, typ::Value.Type, ninputs)
+    ref = addInst(builder, OP.phi, ninputs * 2 + 2)
+    res = newSSA(builder, typ)
+    builder[ref] = res
+    builder[ref + 1] = ninputs
+    bb = builder.f.code[ref.bb + 1]
+    ccall(:memset, Ptr{Void}, (Ptr{Int32}, Cint, Csize_t),
+          pointer(bb, ref.idx + 3), 0xff, sizeof(Int32) * 2 * ninputs)
+    return res, ref
+end
+
+function addPhiInput(builder::Builder, ref, bb, val)
+    code = builder.f.code[ref.bb + 1]
+    offset = ref.idx
+    nargs = code[offset + 2]
+    for i in 1:nargs
+        bb1 = code[2i + offset + 1]
+        if bb1 == bb || bb1 == -1
+            code[2i + offset + 1] = bb
+            code[2i + offset + 2] = val
+            break
+        end
+    end
+end
+
+function createCall(builder::Builder, id::Builtin.Id, args)
+    nargs = length(args)
+    calltyp = getBuiltinType(id)
+    if calltyp == Builtin.F64_F64
+        if nargs != 1
+            return getConstFloat(builder, 0)
+        end
+    elseif (calltyp == Builtin.F64_F64F64 || calltyp == Builtin.F64_F64I32 ||
+            calltyp == Builtin.F64_I32F64)
+        if nargs != 2
+            return getConstFloat(builder, 0)
+        end
+    elseif calltyp == Builtin.F64_F64F64F64
+        if nargs != 3
+            return getConstFloat(builder, 0)
+        end
+    else
+        return getConstFloat(builder, 0)
+    end
+    allconst = true
+    for arg in args
+        if arg >= 0
+            allconst = false
+            break
+        end
+    end
+    if allconst
+        carg1 = TagVal()
+        carg2 = TagVal()
+        carg3 = TagVal()
+        f = builder.f
+        carg1 = evalConst(f, args[1])
+        if nargs == 2
+            carg2 = evalConst(f, args[2])
+        elseif nargs == 3
+            carg2 = evalConst(f, args[2])
+            carg3 = evalConst(f, args[3])
+        end
+        return getConstFloat(builder, evalBuiltin(id, (carg1, carg2, carg3)))
+    end
+    ref = addInst(builder, OP.call, nargs + 3)
+    res = newSSA(builder, Value.Float64)
+    builder[ref] = res
+    builder[ref + 1] = Int32(id)
+    builder[ref + 2] = nargs
+    for i in 1:nargs
+        builder[ref + 2 + i] = args[i]
+    end
+    return res
+end
 
 # struct NACS_EXPORT EvalContext {
 #     EvalContext(const Function &f)
@@ -597,312 +819,6 @@ end
 #     const Function &m_f;
 #     std::vector<GenVal> m_vals;
 # };
-
-# int32_t *Builder::addInst(Opcode op, size_t nop)
-# {
-#     Function::InstRef inst;
-#     return addInst(op, nop, inst);
-# }
-
-# int32_t *Builder::addInst(Opcode op, size_t nop, Function::InstRef &inst)
-# {
-#     auto &bb = m_f.code[m_cur_bb];
-#     auto oldlen = (int32_t)bb.size();
-#     inst.first = m_cur_bb;
-#     inst.second = oldlen + 1;
-#     bb.resize(oldlen + nop + 1);
-#     bb[oldlen] = uint32_t(op);
-#     return &bb[oldlen + 1];
-# }
-
-# void Builder::createRet(int32_t val)
-# {
-#     *addInst(Opcode::Ret, 1) = val;
-# }
-
-# int32_t Builder::getConstInt(int32_t val)
-# {
-#     auto map = const_ints;
-#     auto it = map.find(val);
-#     if (it != map.end())
-#         return it->second;
-#     int32_t oldlen = (int32_t)m_f.consts.size();
-#     m_f.consts.emplace_back(val);
-#     int32_t id = Consts::_Offset - oldlen;
-#     map[val] = id;
-#     return id;
-# }
-
-# int32_t Builder::getConstFloat(double val)
-# {
-#     auto map = const_floats;
-#     auto it = map.find(val);
-#     if (it != map.end())
-#         return it->second;
-#     int32_t oldlen = (int32_t)m_f.consts.size();
-#     m_f.consts.emplace_back(val);
-#     int32_t id = Consts::_Offset - oldlen;
-#     map[val] = id;
-#     return id;
-# }
-
-# int32_t Builder::getConst(TagVal val)
-# {
-#     switch (val.typ) {
-#     case Type::Bool:
-#         return val.val.b ? Consts::True : Consts::False;
-#     case Type::Int32:
-#         return getConstInt(val.val.i32);
-#     case Type::Float64:
-#         return getConstFloat(val.val.f64);
-#     default:
-#         return Consts::False;
-#     }
-# }
-
-# int32_t Builder::newSSA(Type typ)
-# {
-#     int32_t id = (int32_t)m_f.vals.size();
-#     m_f.vals.push_back(typ);
-#     return id;
-# }
-
-# int32_t Builder::newBB(void)
-# {
-#     int32_t id = (int32_t)m_f.code.size();
-#     m_f.code.push_back({});
-#     return id;
-# }
-
-# int32_t &Builder::curBB()
-# {
-#     return m_cur_bb;
-# }
-
-# void Builder::createBr(int32_t br)
-# {
-#     createBr(Consts::True, br, 0);
-# }
-
-# void Builder::createBr(int32_t cond, int32_t bb1, int32_t bb2)
-# {
-#     if (cond == Consts::True) {
-#         int32_t *ptr = addInst(Opcode::Br, 2);
-#         ptr[0] = Consts::True;
-#         ptr[1] = bb1;
-#     }
-#     else {
-#         int32_t *ptr = addInst(Opcode::Br, 3);
-#         ptr[0] = cond;
-#         ptr[1] = bb1;
-#         ptr[2] = bb2;
-#     }
-# }
-
-# static TagVal evalAdd(Type typ, TagVal val1, TagVal val2)
-# {
-#     switch (typ) {
-#     case Type::Int32:
-#         return val1.get<int32_t>() + val2.get<int32_t>();
-#     case Type::Float64:
-#         return val1.get<double>() + val2.get<double>();
-#     default:
-#         return TagVal(typ);
-#     }
-# }
-
-# static TagVal evalSub(Type typ, TagVal val1, TagVal val2)
-# {
-#     switch (typ) {
-#     case Type::Int32:
-#         return val1.get<int32_t>() - val2.get<int32_t>();
-#     case Type::Float64:
-#         return val1.get<double>() - val2.get<double>();
-#     default:
-#         return TagVal(typ);
-#     }
-# }
-
-# static TagVal evalMul(Type typ, TagVal val1, TagVal val2)
-# {
-#     switch (typ) {
-#     case Type::Int32:
-#         return val1.get<int32_t>() * val2.get<int32_t>();
-#     case Type::Float64:
-#         return val1.get<double>() * val2.get<double>();
-#     default:
-#         return TagVal(typ);
-#     }
-# }
-
-# static TagVal evalFDiv(TagVal val1, TagVal val2)
-# {
-#     return val1.get<double>() / val2.get<double>();
-# }
-
-# static TagVal evalCmp(CmpType cmptyp, TagVal val1, TagVal val2)
-# {
-#     double v1 = val1.get<double>();
-#     double v2 = val2.get<double>();
-#     switch (cmptyp) {
-#     case CmpType::eq:
-#         return v1 == v2;
-#     case CmpType::gt:
-#         return v1 > v2;
-#     case CmpType::ge:
-#         return v1 >= v2;
-#     case CmpType::lt:
-#         return v1 < v2;
-#     case CmpType::le:
-#         return v1 <= v2;
-#     case CmpType::ne:
-#         return v1 != v2;
-#     default:
-#         return false;
-#     }
-# }
-
-# int32_t Builder::createPromoteOP(Opcode op, int32_t val1, int32_t val2)
-# {
-#     auto ty1 = m_f.valType(val1);
-#     auto ty2 = m_f.valType(val2);
-#     auto resty = std::max(std::max(ty1, ty2), Type::Int32);
-#     if (val1 < 0 && val2 < 0) {
-#         switch (op) {
-#         case Opcode::Add:
-#             return getConst(evalAdd(resty, m_f.evalConst(val1),
-#                                     m_f.evalConst(val2)));
-#         case Opcode::Sub:
-#             return getConst(evalSub(resty, m_f.evalConst(val1),
-#                                     m_f.evalConst(val2)));
-#         case Opcode::Mul:
-#             return getConst(evalMul(resty, m_f.evalConst(val1),
-#                                     m_f.evalConst(val2)));
-#         default:
-#             break;
-#         }
-#     }
-#     int32_t *ptr = addInst(op, 3);
-#     auto res = newSSA(resty);
-#     ptr[0] = res;
-#     ptr[1] = val1;
-#     ptr[2] = val2;
-#     return res;
-# }
-
-# int32_t Builder::createAdd(int32_t val1, int32_t val2)
-# {
-#     return createPromoteOP(Opcode::Add, val1, val2);
-# }
-
-# int32_t Builder::createSub(int32_t val1, int32_t val2)
-# {
-#     return createPromoteOP(Opcode::Sub, val1, val2);
-# }
-
-# int32_t Builder::createMul(int32_t val1, int32_t val2)
-# {
-#     return createPromoteOP(Opcode::Mul, val1, val2);
-# }
-
-# int32_t Builder::createFDiv(int32_t val1, int32_t val2)
-# {
-#     if (val1 < 0 && val2 < 0)
-#         return getConst(evalFDiv(m_f.evalConst(val1), m_f.evalConst(val2)));
-#     int32_t *ptr = addInst(Opcode::FDiv, 3);
-#     auto res = newSSA(Type::Float64);
-#     ptr[0] = res;
-#     ptr[1] = val1;
-#     ptr[2] = val2;
-#     return res;
-# }
-
-# int32_t Builder::createCmp(CmpType cmptyp, int32_t val1, int32_t val2)
-# {
-#     if (val1 < 0 && val2 < 0)
-#         return getConst(evalCmp(cmptyp, m_f.evalConst(val1),
-#                                 m_f.evalConst(val2)));
-#     int32_t *ptr = addInst(Opcode::Cmp, 4);
-#     auto res = newSSA(Type::Bool);
-#     ptr[0] = res;
-#     ptr[1] = uint32_t(cmptyp);
-#     ptr[2] = val1;
-#     ptr[3] = val2;
-#     return res;
-# }
-
-# std::pair<int32_t, Function::InstRef> Builder::createPhi(Type typ, int ninputs)
-# {
-#     Function::InstRef inst;
-#     int32_t *ptr = addInst(Opcode::Phi, ninputs * 2 + 2, inst);
-#     auto res = newSSA(typ);
-#     ptr[0] = res;
-#     ptr[1] = ninputs;
-#     memset(&ptr[2], 0xff, ninputs * 2 * 4);
-#     return std::make_pair(res, inst);
-# }
-
-# int32_t Builder::createCall(Builtins id, int32_t nargs, const int32_t *args)
-# {
-#     switch (getBuiltinType(id)) {
-#     case BuiltinType::F64_F64:
-#         if (nargs != 1)
-#             return getConstFloat(0);
-#         break;
-#     case BuiltinType::F64_F64F64:
-#         if (nargs != 2)
-#             return getConstFloat(0);
-#         break;
-#     case BuiltinType::F64_F64F64F64:
-#         if (nargs != 3)
-#             return getConstFloat(0);
-#         break;
-#     case BuiltinType::F64_F64I32:
-#         if (nargs != 2)
-#             return getConstFloat(0);
-#         break;
-#     case BuiltinType::F64_I32F64:
-#         if (nargs != 2)
-#             return getConstFloat(0);
-#         break;
-#     default:
-#         return getConstFloat(0);
-#     }
-#     bool allconst = true;
-#     for (int i = 0;i < nargs;i++) {
-#         if (args[i] >= 0) {
-#             allconst = false;
-#             break;
-#         }
-#     }
-#     if (allconst) {
-#         TagVal constargs[3];
-#         assert(nargs <= 3);
-#         for (int i = 0;i < nargs;i++)
-#             constargs[i] = m_f.evalConst(args[i]);
-#         return getConstFloat(evalBuiltin(id, constargs));
-#     }
-#     int32_t *ptr = addInst(Opcode::Call, nargs + 3);
-#     auto res = newSSA(Type::Float64);
-#     ptr[0] = res;
-#     ptr[1] = uint32_t(id);
-#     ptr[2] = nargs;
-#     memcpy(&ptr[3], args, nargs * 4);
-#     return res;
-# }
-
-# void Builder::addPhiInput(Function::InstRef phi, int32_t bb, int32_t val)
-# {
-#     int32_t *inst = &m_f.code[phi.first][phi.second];
-#     int32_t nargs = inst[1];
-#     for (int32_t i = 0;i < nargs;i++) {
-#         if (inst[2 + 2 * i] == bb || inst[2 + 2 * i] == -1) {
-#             inst[2 + 2 * i] = bb;
-#             inst[2 + 2 * i + 1] = val;
-#             break;
-#         }
-#     }
-# }
 
 # TagVal EvalContext::evalVal(int32_t id) const
 # {
