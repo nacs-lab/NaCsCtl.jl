@@ -538,7 +538,7 @@ end
 Base.get(builder::Builder) = builder.f
 
 getConstInt(builder::Builder, val::Int32) = get!(builder.const_ints, val) do
-    func = builder.f
+    f = builder.f
     consts = f.consts
     oldlen = length(consts)
     push!(consts, TagVal(val))
@@ -549,7 +549,7 @@ end
 getConstInt(builder::Builder, val) = getConstInt(builder, Int32(val))
 
 getConstFloat(builder::Builder, val::Float64) = get!(builder.const_floats, val) do
-    func = builder.f
+    f = builder.f
     consts = f.consts
     oldlen = length(consts)
     push!(consts, TagVal(val))

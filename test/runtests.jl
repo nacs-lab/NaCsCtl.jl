@@ -30,4 +30,6 @@ using Base.Test
     @test sprint(show, root["a"]) == "Node(name=\"a\", parent=root, children=[\"b\" -> [\"c\", \"d\", \"e\"]])"
 end
 
-include("ir.jl")
+@testset "IR" begin
+    include("ir.jl")
+end
