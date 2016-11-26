@@ -388,7 +388,7 @@ function showBB(io::IO, func::Func, bb)
             i += 1
             val2 = bb[i]
             i += 1
-            print(io, " ")
+            print(io, "  ")
             showVal(io, func, res)
             print(io, " = ", opName(op), " ")
             showVal(io, func, val1)
