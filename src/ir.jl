@@ -86,13 +86,13 @@ const _Offset = Int32(-3)
 end
 
 bitstype 64 GenVal
-Base.Bool(v::GenVal) = (reinterpret(UInt64, v) % UInt8) != 0
-Base.Int32(v::GenVal) = reinterpret(UInt64, v) % Int32
-Base.Float64(v::GenVal) = reinterpret(Float64, v)
-GenVal(v::Bool) = reinterpret(GenVal, UInt64(v))
-GenVal(v::Int32) = reinterpret(GenVal, v % UInt64)
-GenVal(v::Float64) = reinterpret(GenVal, v)
-Base.cconvert{T<:Union{Bool,Int32,Float64}}(::Type{T}, v::GenVal) = T(v)
+@inline Base.Bool(v::GenVal) = (reinterpret(UInt64, v) % UInt8) != 0
+@inline Base.Int32(v::GenVal) = reinterpret(UInt64, v) % Int32
+@inline Base.Float64(v::GenVal) = reinterpret(Float64, v)
+@inline GenVal(v::Bool) = reinterpret(GenVal, UInt64(v))
+@inline GenVal(v::Int32) = reinterpret(GenVal, v % UInt64)
+@inline GenVal(v::Float64) = reinterpret(GenVal, v)
+@inline Base.cconvert{T<:Union{Bool,Int32,Float64}}(::Type{T}, v::GenVal) = T(v)
 
 immutable TagVal
     typ::Value.Type
@@ -102,8 +102,8 @@ immutable TagVal
     TagVal(i::Integer) = new(Value.Int32, GenVal(Int32(i)))
     TagVal(f::AbstractFloat) = new(Value.Float64, GenVal(Float64(f)))
 end
-Base.Bool(v::TagVal) = Bool(v.val)
-function Base.Int32(v::TagVal)::Int32
+@inline Base.Bool(v::TagVal) = Bool(v.val)
+@inline function Base.Int32(v::TagVal)::Int32
     if v.typ == Value.Bool
         return Bool(v.val)
     elseif v.typ == Value.Int32
@@ -112,7 +112,7 @@ function Base.Int32(v::TagVal)::Int32
         return trunc(Int32, Float64(v.val))
     end
 end
-function Base.Float64(v::TagVal)::Float64
+@inline function Base.Float64(v::TagVal)::Float64
     if v.typ == Value.Bool
         return Bool(v.val)
     elseif v.typ == Value.Int32
@@ -121,7 +121,7 @@ function Base.Float64(v::TagVal)::Float64
         return Float64(v.val)
     end
 end
-Base.cconvert{T<:Union{Bool,Int32,Float64}}(::Type{T}, v::TagVal) = T(v)
+@inline Base.cconvert{T<:Union{Bool,Int32,Float64}}(::Type{T}, v::TagVal) = T(v)
 function Base.show(io::IO, v::TagVal)
     print(io, typeName(v.typ), " ")
     if v.typ == Value.Bool
@@ -850,8 +850,8 @@ function (ctx::EvalContext)()
     vals = ctx.vals
     types = f.vals
 
-    bb_num = 0
-    prev_bb_num = -1
+    bb_num::Int32 = 0
+    prev_bb_num::Int32 = -1
     bb = code[1]
     pc = 1
     pcend = length(bb)
