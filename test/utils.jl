@@ -33,6 +33,13 @@ import NaCsCtl: @named_consts, validate, constname
     @test constname(C8) === :C8
     @test constname(D8) === :D8
     @test constname(T8(-1)) === Symbol("")
+
+    @test convert(T8, 0) === A8
+    @test_throws ArgumentError convert(T8, -1)
+    @test sprint(print, A8) == "A8"
+    @test sprint(print, B8) == "B8"
+    @test sprint(print, C8) == "C8"
+    @test sprint(print, D8) == "D8"
 end
 
 @named_consts(16, T16, A16, B16, C16=B16 - 10 + sizeof(T16), D16)
@@ -66,6 +73,13 @@ end
     @test constname(C16) === :C16
     @test constname(D16) === :D16
     @test constname(T16(2)) === Symbol("")
+
+    @test convert(T16, 0) === A16
+    @test_throws ArgumentError convert(T16, -1)
+    @test sprint(print, A16) == "A16"
+    @test sprint(print, B16) == "B16"
+    @test sprint(print, C16) == "C16"
+    @test sprint(print, D16) == "D16"
 end
 
 t32_size = 4
@@ -100,6 +114,13 @@ t32_size = 4
     @test constname(C32) === :C32
     @test constname(D32) === :D32
     @test constname(T32(2)) === Symbol("")
+
+    @test convert(T32, 0) === A32
+    @test_throws ArgumentError convert(T32, -1)
+    @test sprint(print, A32) == "A32"
+    @test sprint(print, B32) == "B32"
+    @test sprint(print, C32) == "C32"
+    @test sprint(print, D32) == "D32"
 end
 
 @named_consts sizeof(T32) * 2 * 8 T64 A64 B64 C64=sizeof(T64) - B64 - 6 D64
@@ -132,6 +153,13 @@ end
     @test constname(C64) === :B64
     @test constname(D64) === :D64
     @test constname(T64(3)) === Symbol("")
+
+    @test convert(T64, 0) === A64
+    @test_throws ArgumentError convert(T64, -1)
+    @test sprint(print, A64) == "A64"
+    @test sprint(print, B64) == "B64"
+    @test sprint(print, C64) == "B64"
+    @test sprint(print, D64) == "D64"
 end
 
 @named_consts sizeof(T64) * 2 * 8 T128 A128 B128 C128=sizeof(T128) - B128 D128
@@ -165,6 +193,13 @@ end
     @test constname(C128) === :C128
     @test constname(D128) === :D128
     @test constname(T128(2)) === Symbol("")
+
+    @test convert(T128, 0) === A128
+    @test_throws ArgumentError convert(T128, -1)
+    @test sprint(print, A128) == "A128"
+    @test sprint(print, B128) == "B128"
+    @test sprint(print, C128) == "C128"
+    @test sprint(print, D128) == "D128"
 end
 
 @testset "Error" begin
