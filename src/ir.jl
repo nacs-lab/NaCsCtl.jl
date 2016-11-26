@@ -14,6 +14,7 @@
 module IR
 
 const empty_sym = Symbol("")
+import ..constname
 
 baremodule Value
 import ...@named_consts
@@ -604,7 +605,7 @@ function Base.getindex(builder::Builder, ref::InstRef)
 end
 
 function addInst(builder::Builder, op::OP.Type, nop)
-    bb = builder.f.code[builder.cur_bb]
+    bb = builder.f.code[builder.cur_bb + 1]
     oldlen = length(bb)
     ref = InstRef(builder.cur_bb, oldlen + 1)
     resize!(bb, oldlen + nop + 1)

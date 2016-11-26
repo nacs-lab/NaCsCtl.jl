@@ -186,12 +186,12 @@ macro named_consts(sz, typename::Symbol, vals...)
     # name
     funcs_expr = quote
         function $thismodule.constname(x::$(esc(typename)))
-            $((:(x === $name && return $(QuoteNode(name))) for name in names)...)
+            $((:(x === $(esc(name)) && return $(QuoteNode(name))) for name in names)...)
             return $(QuoteNode(Symbol("")))
         end
         function $(esc(typename))(_x::Integer)
             x = convert($inttype, _x)::$inttype
-            return reinterpret(T, x)
+            return reinterpret($(esc(typename)), x)
         end
         $Core.eval(current_module(),
                    get_checkfunc($(esc(typename)), $inttype, $valset))

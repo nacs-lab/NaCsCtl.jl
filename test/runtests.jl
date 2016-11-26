@@ -29,3 +29,5 @@ using Base.Test
     @test root[["a", "b"]] === root[["c", "d", "e"]]
     @test sprint(show, root["a"]) == "Node(name=\"a\", parent=root, children=[\"b\" -> [\"c\", \"d\", \"e\"]])"
 end
+
+include("ir.jl")
