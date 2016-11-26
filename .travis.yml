@@ -6,5 +6,8 @@ julia:
   - nightly
 notifications:
   email: false
+script:
+  - julia -e 'Pkg.clone(pwd())'
+  - julia --check-bounds=yes --compilecache=no -e 'Pkg.test("NaCsCtl", coverage=true)'
 after_success:
   - julia -e 'VERSION >= v"0.6.0-dev" || exit(); cd(Pkg.dir("NaCsCtl")); Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
