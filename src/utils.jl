@@ -47,7 +47,7 @@ end
 end
 
 function constname end
-validate{Ti}(x::NamedConsts{Ti}) = validate(reinterpret(Ti, x))
+validate{Ti}(x::NamedConsts{Ti}) = validate(typeof(x), reinterpret(Ti, x))
 
 Base.convert{T<:Integer,Ti}(::Type{T}, x::NamedConsts{Ti})::T =
     reinterpret(Ti, x)
@@ -103,10 +103,10 @@ function get_checkfunc{Ti}(T, ::Type{Ti}, set)
     tmin = vec[1]
     common_expr = quote
         $Base.@inline function $Base.typemin(::$Base.Type{$T})
-            return $tmin
+            return $(reinterpret(T, tmin))
         end
         $Base.@inline function $Base.typemax(::$Base.Type{$T})
-            return $tmax
+            return $(reinterpret(T, tmax))
         end
         $Base.@inline function $Base.instances(::$Base.Type{$T})
             return ($((reinterpret(T, v) for v in vec)...),)
