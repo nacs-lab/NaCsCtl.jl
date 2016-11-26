@@ -121,6 +121,7 @@ function Base.Float64(v::TagVal)::Float64
         return Float64(v.val)
     end
 end
+Base.cconvert{T<:Union{Bool,Int32,Float64}}(::Type{T}, v::TagVal) = T(v)
 function Base.show(io::IO, v::TagVal)
     print(io, typeName(v.typ), " ")
     if v.typ == Value.Bool
@@ -804,142 +805,134 @@ function createCall(builder::Builder, id::Builtin.Id, args)
     return res
 end
 
-# struct NACS_EXPORT EvalContext {
-#     EvalContext(const Function &f)
-#         : m_f(f),
-#           m_vals(f.vals.size())
-#     {}
-#     void reset(GenVal *args)
-#     {
-#         memcpy(m_vals.data(), args, m_f.nargs * sizeof(GenVal));
-#     }
-#     void reset(std::vector<TagVal> tagvals)
-#     {
-#         std::vector<GenVal> args(m_f.nargs);
-#         for (int i = 0;i < m_f.nargs;i++)
-#             args[i] = tagvals[i].convert(m_f.vals[i]).val;
-#         reset(args.data());
-#     }
-#     void reset(int idx, const GenVal &arg)
-#     {
-#         m_vals[idx] = arg;
-#     }
-#     TagVal evalVal(int32_t id) const;
-#     TagVal eval(void);
+immutable EvalContext
+    f::Func
+    vals::Vector{GenVal}
+    EvalContext(f::Func) = new(f, Vector{GenVal}(length(f.vals)))
+end
 
-# private:
-#     const Function &m_f;
-#     std::vector<GenVal> m_vals;
-# };
+function Base.setindex!(ctx::EvalContext, vals, ::Colon)
+    for i in 1:length(vals)
+        ctx[i] = vals[i]
+    end
+end
 
-# TagVal EvalContext::evalVal(int32_t id) const
-# {
-#     if (id >= 0) {
-#         return TagVal(m_f.vals[id], m_vals[id]);
-#     } else {
-#         return m_f.evalConst(id);
-#     }
-# }
+function Base.setindex!(ctx::EvalContext, val, i)
+    ctx.vals[i] = genconvert(ctx.f.vals[i], val).val
+    return
+end
 
-# TagVal EvalContext::eval(void)
-# {
-#     int32_t bb_num = -1;
-#     int32_t prev_bb_num;
-#     const int32_t *pc;
-#     const int32_t *end;
-#     auto enter_bb = [&] (int32_t i) {
-#         prev_bb_num = bb_num;
-#         bb_num = i;
-#         auto &bb = m_f.code[i];
-#         pc = bb.data();
-#         end = pc + bb.size();
-#     };
-#     enter_bb(0);
+@inline function genconvert(typ::Value.Type, val)
+    if typ == Value.Bool
+        return TagVal(Bool(val))
+    elseif typ == Value.Int32
+        return TagVal(Int32(val))
+    elseif typ == Value.Float64
+        return TagVal(Float64(val))
+    else
+        return TagVal()
+    end
+end
 
-#     while (end > pc) {
-#         auto op = Opcode(*pc);
-#         pc++;
-#         auto res = *pc;
-#         pc++;
-#         auto &res_slot = m_vals[res];
-#         switch (op) {
-#         case Opcode::Ret:
-#             return evalVal(res).convert(m_f.ret);
-#         case Opcode::Br:
-#             if (evalVal(res).get<bool>()) {
-#                 enter_bb(pc[0]);
-#             } else {
-#                 enter_bb(pc[1]);
-#             }
-#             continue;
-#         case Opcode::Add:
-#         case Opcode::Sub:
-#         case Opcode::Mul:
-#         case Opcode::FDiv: {
-#             auto val1 = evalVal(*pc);
-#             pc++;
-#             auto val2 = evalVal(*pc);
-#             pc++;
-#             switch (op) {
-#             case Opcode::Add:
-#                 res_slot = evalAdd(m_f.vals[res], val1, val2).val;
-#                 break;
-#             case Opcode::Sub:
-#                 res_slot = evalSub(m_f.vals[res], val1, val2).val;
-#                 break;
-#             case Opcode::Mul:
-#                 res_slot = evalMul(m_f.vals[res], val1, val2).val;
-#                 break;
-#             case Opcode::FDiv:
-#                 res_slot = evalFDiv(val1, val2).val;
-#                 break;
-#             default:
-#                 break;
-#             }
-#             break;
-#         }
-#         case Opcode::Cmp: {
-#             auto cmptyp = CmpType(*pc);
-#             pc++;
-#             auto val1 = evalVal(*pc);
-#             pc++;
-#             auto val2 = evalVal(*pc);
-#             pc++;
-#             res_slot = evalCmp(cmptyp, val1, val2).val;
-#             break;
-#         }
-#         case Opcode::Phi: {
-#             auto nargs = *pc;
-#             pc++;
-#             auto args = pc;
-#             pc += 2 * nargs;
-#             for (int i = 0;i < nargs;i++) {
-#                 if (args[2 * i] == prev_bb_num) {
-#                     auto val = evalVal(args[2 * i + 1]);
-#                     res_slot = val.convert(m_f.vals[res]).val;
-#                     break;
-#                 }
-#             }
-#             break;
-#         }
-#         case Opcode::Call: {
-#             auto id = Builtins(*pc);
-#             pc++;
-#             auto nargs = *pc;
-#             pc++;
-#             TagVal argvals[3];
-#             assert(nargs <= 3);
-#             for (int i = 0;i < nargs;i++)
-#                 argvals[i] = evalVal(pc[i]);
-#             pc += nargs;
-#             res_slot = TagVal(evalBuiltin(id, argvals)).val;
-#             break;
-#         }
-#         default:
-#             break;
-#         }
-#     }
-#     return TagVal(m_f.ret);
-# }
+@inline function evalVal(ctx::EvalContext, id)
+    f = ctx.f
+    if id >= 0
+        return TagVal(f.vals[id + 1], ctx.vals[id + 1])
+    else
+        return evalConst(f, id)
+    end
+end
+
+function (ctx::EvalContext)()
+    f = ctx.f
+    code = f.code
+    nbb = length(code)
+    vals = ctx.vals
+    types = f.vals
+
+    bb_num = 0
+    prev_bb_num = -1
+    bb = code[1]
+    pc = 1
+    pcend = length(bb)
+
+    @inbounds while pcend >= pc
+        op = bb[pc]
+        pc += 1
+        res = bb[pc]
+        pc += 1
+        if op == OP.ret
+            return genconvert(f.ret, evalVal(ctx, res))
+        elseif op == OP.br
+            new_bb = if Bool(evalVal(ctx, res))
+                bb[pc]
+            else
+                bb[pc + 1]
+            end
+            prev_bb_num = bb_num
+            bb_num = new_bb
+            if new_bb + 1 > nbb
+                throw(BoundsError(code, new_bb + 1))
+            end
+            bb = code[new_bb + 1]
+            pc = 1
+            pcend = length(bb)
+        elseif op == OP.add || op == OP.sub || op == OP.mul || op == OP.fdiv
+            val1 = evalVal(ctx, bb[pc])
+            pc += 1
+            val2 = evalVal(ctx, bb[pc])
+            pc += 1
+            vals[res + 1] = if op == OP.add
+                evalBinOp(+, types[res + 1], val1, val2).val
+            elseif op == OP.sub
+                evalBinOp(-, types[res + 1], val1, val2).val
+            elseif op == OP.mul
+                evalBinOp(*, types[res + 1], val1, val2).val
+            else # fdiv
+                evalBinOp(/, Value.Float64, val1, val2).val
+            end
+        elseif op == OP.cmp
+            cmptyp = Cmp.Type(bb[pc])
+            pc += 1
+            val1 = evalVal(ctx, bb[pc])
+            pc += 1
+            val2 = evalVal(ctx, bb[pc])
+            pc += 1
+            vals[res + 1] = evalCmp(cmptyp, val1, val2).val
+        elseif op == OP.phi
+            nargs = bb[pc]
+            pc += 1
+            args = pc
+            pc += 2 *nargs
+            for i in 0:(nargs - 1)
+                if bb[args + 2i] == prev_bb_num
+                    vals[res + 1] = genconvert(types[res + 1],
+                                               evalVal(ctx, bb[args + 2i + 1])).val
+                    break
+                end
+            end
+        elseif op == OP.call
+            id = Builtin.Id(bb[pc])
+            pc += 1
+            nargs = bb[pc]
+            pc += 1
+            arg1 = TagVal()
+            arg2 = TagVal()
+            arg3 = TagVal()
+            arg1 = evalVal(ctx, bb[pc])
+            if nargs == 2
+                arg2 = evalVal(ctx, bb[pc + 1])
+            elseif nargs == 3
+                arg2 = evalVal(ctx, bb[pc + 1])
+                arg3 = evalVal(ctx, bb[pc + 2])
+            end
+            pc += nargs
+            vals[res + 1] = GenVal(evalBuiltin(id, (arg1, arg2, arg3)))
+        else
+            break
+        end
+    end
+    return TagVal(f.ret)
+end
 
 end

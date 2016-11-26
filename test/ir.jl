@@ -2,44 +2,65 @@
 
 import NaCsCtl.IR
 
+const take_i32 = if VERSION >= v"0.6.0-dev.1256"
+    x->reinterpret(Int32, take!(x))
+else
+    x->reinterpret(Int32, takebuf_array(x))
+end
+
 @testset "Return arg" begin
     builder = IR.Builder(IR.Value.Float64, [IR.Value.Float64])
     IR.createRet(builder, 0)
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Float64 (Float64 %0) {
 L0:
   ret Float64 %0
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[:] = 1.2
+    @test ctx() == IR.TagVal(1.2)
+    ctx[:] = 4.2
+    @test ctx() == IR.TagVal(4.2)
 end
 
 @testset "Return const" begin
     builder = IR.Builder(IR.Value.Bool, [])
     IR.createRet(builder, IR.Consts.False)
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Bool () {
 L0:
   ret Bool false
 }
 """
+    ctx = IR.EvalContext(f)
+    @test ctx() == IR.TagVal(false)
 
     builder = IR.Builder(IR.Value.Float64, [])
     IR.createRet(builder, IR.getConstFloat(builder, 1.1))
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Float64 () {
 L0:
   ret Float64 1.1
 }
 """
+    ctx = IR.EvalContext(f)
+    @test ctx() == IR.TagVal(1.1)
 
     builder = IR.Builder(IR.Value.Int32, [])
     IR.createRet(builder, IR.getConstInt(builder, 42))
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Int32 () {
 L0:
   ret Int32 42
 }
 """
+    ctx = IR.EvalContext(f)
+    @test ctx() == IR.TagVal(Int32(42))
 end
 
 @testset "Branch" begin
@@ -51,7 +72,8 @@ end
     IR.createRet(builder, 1)
     IR.setCurBB(builder, fail_bb)
     IR.createRet(builder, IR.getConstFloat(builder, 3.5f0))
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Float64 (Bool %0, Float64 %1) {
 L0:
   br Bool %0, L1, L2
@@ -61,6 +83,13 @@ L2:
   ret Float64 3.5
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[1] = true
+    ctx[2] = 1.3
+    @test ctx() == IR.TagVal(1.3)
+    ctx[1] = false
+    ctx[2] = 1.3
+    @test ctx() == IR.TagVal(3.5)
 end
 
 @testset "BinOps" begin
@@ -69,7 +98,8 @@ end
     val2 = IR.createMul(builder, val1, 1)
     val3 = IR.createSub(builder, val1, val2)
     IR.createRet(builder, val3)
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Float64 (Float64 %0, Float64 %1) {
 L0:
   Float64 %2 = add Float64 3.4, Float64 %0
@@ -78,17 +108,26 @@ L0:
   ret Float64 %4
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[1] = 2.3
+    ctx[2] = 1.3
+    @test ctx() == IR.TagVal(-1.71)
 
     builder = IR.Builder(IR.Value.Float64, [IR.Value.Int32, IR.Value.Int32])
     val1 = IR.createFDiv(builder, 0, 1)
     IR.createRet(builder, val1)
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Float64 (Int32 %0, Int32 %1) {
 L0:
   Float64 %2 = fdiv Int32 %0, Int32 %1
   ret Float64 %2
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[1] = 3
+    ctx[2] = 2
+    @test ctx() == IR.TagVal(1.5)
 end
 
 @testset "Compare" begin
@@ -101,7 +140,8 @@ end
     IR.createRet(builder, 1)
     IR.setCurBB(builder, fail_bb)
     IR.createRet(builder, 0)
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Float64 (Int32 %0, Float64 %1) {
 L0:
   Bool %2 = cmp ge Int32 %0, Float64 %1
@@ -112,6 +152,13 @@ L2:
   ret Int32 %0
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[1] = 20
+    ctx[2] = 1.3
+    @test ctx() == IR.TagVal(1.3)
+    ctx[1] = -10
+    ctx[2] = 1.3
+    @test ctx() == IR.TagVal(-10.0)
 end
 
 @testset "Loop" begin
@@ -132,7 +179,8 @@ end
     IR.addPhiInput(builder, s[2], loop_bb, s2)
     IR.setCurBB(builder, ret_bb)
     IR.createRet(builder, s2)
-    @test string(get(builder)) == """
+    f = get(builder)
+    @test string(f) == """
 Int32 (Int32 %0, Int32 %1) {
 L0:
   br L1
@@ -147,6 +195,13 @@ L2:
   ret Int32 %5
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[1] = 1
+    ctx[2] = 3
+    @test ctx() == IR.TagVal(Int32(6))
+    ctx[1] = 2
+    ctx[2] = 1000
+    @test ctx() == IR.TagVal(Int32(500499))
 end
 
 @testset "Builtin" begin
@@ -157,8 +212,9 @@ end
                               IR.createCall(builder, IR.Builtin.sin, (
                                   IR.createMul(builder, 0,
                                                IR.getConstInt(builder, 2))
-                              ))));
-    @test string(get(builder)) == """
+                              ))))
+    f = get(builder)
+    @test string(f) == """
 Float64 (Int32 %0) {
 L0:
   Float64 %1 = call sin(Int32 %0)
@@ -168,15 +224,24 @@ L0:
   ret Float64 %4
 }
 """
+    ctx = IR.EvalContext(f)
+    ctx[1] = 1
+    @test ctx() == IR.TagVal(sin(1) + sin(2))
+    ctx[1] = 2
+    @test ctx() == IR.TagVal(sin(2) + sin(4))
+
+    io = IOBuffer()
+    write(io, f)
+    seek(io, 0)
+    f = read(io, IR.Func)
+    ctx = IR.EvalContext(f)
+    ctx[1] = 1
+    @test ctx() == IR.TagVal(sin(1) + sin(2))
+    ctx[1] = 2
+    @test ctx() == IR.TagVal(sin(2) + sin(4))
 end
 
 @testset "Serialize" begin
-    take_i32 = if VERSION >= v"0.6.0-dev.1256"
-        x->reinterpret(Int32, take!(x))
-    else
-        x->reinterpret(Int32, takebuf_array(x))
-    end
-
     data = Int32[3, 2, 6, 50529027, 771, 1, 3, 0, 1073741824, 1, 14, 5,
                  5, 0, -3, 3, 4, 5, -3, 3, 2, 3, 1, 1, 2]
     func = read(IOBuffer(reinterpret(UInt8, data)), IR.Func)

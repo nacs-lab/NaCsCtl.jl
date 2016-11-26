@@ -76,6 +76,11 @@ function Base.show(io::IO, x::NamedConsts)
         print(io, " = ", Int(x))
     end
 end
+@inline Base.:(==){Ti}(x::NamedConsts{Ti}, y::Integer) =
+    reinterpret(Ti, x) == y
+@inline Base.:(==){Ti}(y::Integer, x::NamedConsts{Ti}) =
+    reinterpret(Ti, x) == y
+@inline Base.hash{Ti}(x::NamedConsts{Ti}, h::UInt) = hash(reinterpret(Ti,x), h)
 
 function get_constval(T, Ti, _val, set)
     val = Ti(_val)::Ti
