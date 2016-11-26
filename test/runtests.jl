@@ -33,3 +33,7 @@ end
 @testset "IR" begin
     include("ir.jl")
 end
+
+@testset "Utils" begin
+    include("utils.jl")
+end

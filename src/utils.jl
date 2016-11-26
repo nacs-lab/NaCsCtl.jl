@@ -25,15 +25,15 @@ abstract NamedConsts{T}
 
 function get_inttype(sz)
     if sz == 8
-        return UInt8
+        return Int8
     elseif sz == 16
-        return UInt16
+        return Int16
     elseif sz == 32
-        return UInt32
+        return Int32
     elseif sz == 64
-        return UInt64
+        return Int64
     elseif sz == 128
-        return UInt128
+        return Int128
     else
         throw(ArgumentError("Illegal size $sz"))
     end
@@ -81,6 +81,14 @@ end
 @inline Base.:(==){Ti}(y::Integer, x::NamedConsts{Ti}) =
     reinterpret(Ti, x) == y
 @inline Base.hash{Ti}(x::NamedConsts{Ti}, h::UInt) = hash(reinterpret(Ti,x), h)
+@inline Base.:+{Ti}(x::NamedConsts{Ti}, y::Integer) =
+    reinterpret(Ti, x) + y
+@inline Base.:+{Ti}(y::Integer, x::NamedConsts{Ti}) =
+    reinterpret(Ti, x) + y
+@inline Base.:-{Ti}(x::NamedConsts{Ti}, y::Integer) =
+    reinterpret(Ti, x) - y
+@inline Base.:-{Ti}(y::Integer, x::NamedConsts{Ti}) =
+    y - reinterpret(Ti, x)
 
 function get_constval(T, Ti, _val, set)
     val = Ti(_val)::Ti
@@ -140,12 +148,15 @@ function get_checkfunc{Ti}(T, ::Type{Ti}, set)
 end
 
 const thismodule = current_module()
-macro named_consts(sz, typename::Symbol, vals...)
+macro named_consts(sz, typename, vals...)
     if Meta.isexpr(sz, :parameters)
         throw(ArgumentError("@named_consts does not accept keyword arguments"))
     end
     if isempty(vals)
         throw(ArgumentError("Names can't be empty"))
+    end
+    if !isa(typename, Symbol)
+        throw(ArgumentError("Type name must be a symbol"))
     end
     @gensym inttype
     ex = quote
@@ -157,6 +168,7 @@ macro named_consts(sz, typename::Symbol, vals...)
     base_var = 0
     offset = 0
     valset = Set{Any}()
+    constargs = []
     # Values
     for val in vals
         if isa(val, Symbol)
@@ -175,17 +187,17 @@ macro named_consts(sz, typename::Symbol, vals...)
             name = name::Symbol
             v = val.args[2]
             @gensym vname
-            push!(ex.args, :(const $vname = $(esc(v))))
+            push!(constargs, :(const $vname = $(esc(v))))
             base_var = vname
             offset = 0
         else
             throw(ArgumentError("Unknown argument $val"))
         end
         push!(names, name)
-        push!(ex.args, :(const $(esc(name)) = get_constval($(esc(typename)),
-                                                           $inttype,
-                                                           $base_var + $offset,
-                                                           $valset)))
+        push!(constargs, :(const $(esc(name)) = get_constval($(esc(typename)),
+                                                             $inttype,
+                                                             $base_var + $offset,
+                                                             $valset)))
         offset += 1
     end
     # name
@@ -198,9 +210,10 @@ macro named_consts(sz, typename::Symbol, vals...)
             x = convert($inttype, _x)::$inttype
             return reinterpret($(esc(typename)), x)
         end
+        $(constargs...)
         $Core.eval(current_module(),
                    get_checkfunc($(esc(typename)), $inttype, $valset))
     end
-    push!(ex.args, funcs_expr)
+    append!(ex.args, funcs_expr.args)
     ex
 end
