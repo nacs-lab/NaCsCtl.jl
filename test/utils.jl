@@ -244,4 +244,9 @@ end
     @test_throws ArgumentError @eval @named_consts 8 T′[] A′
     @test !isdefined(:T′)
     @test !isdefined(:A′)
+
+    @test_throws ArgumentError @eval @named_consts 9 T′ A′ B′
+    @test !isdefined(:T′)
+    @test !isdefined(:A′)
+    @test !isdefined(:B′)
 end
