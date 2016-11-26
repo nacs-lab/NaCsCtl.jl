@@ -425,8 +425,8 @@ function showBB(io::IO, func::Func, bb)
                 else
                     print(io, "[ L")
                 end
-                print(io, bb[i + 2 * j + 1], ": ")
-                showVal(io, func, bb[i + 2 * j + 2])
+                print(io, bb[i + 2 * j], ": ")
+                showVal(io, func, bb[i + 2 * j + 1])
                 print(io, " ]")
             end
             i += 2 * nargs
@@ -710,10 +710,10 @@ function createCmp(builder::Builder, cmp::Cmp.Type, val1, val2)
     end
     ref = addInst(builder, OP.cmp, 4)
     res = newSSA(builder, Value.Bool)
-    builder[res] = res
-    builder[res + 1] = cmp
-    builder[res + 2] = val1
-    builder[res + 3] = val2
+    builder[ref] = res
+    builder[ref + 1] = cmp
+    builder[ref + 2] = val1
+    builder[ref + 3] = val2
     return res;
 end
 
