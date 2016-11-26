@@ -148,3 +148,61 @@ L2:
 }
 """
 end
+
+@testset "Builtin" begin
+    builder = IR.Builder(IR.Value.Float64, [IR.Value.Int32])
+    IR.createRet(builder,
+                 IR.createAdd(builder,
+                              IR.createCall(builder, IR.Builtin.sin, (0,)),
+                              IR.createCall(builder, IR.Builtin.sin, (
+                                  IR.createMul(builder, 0,
+                                               IR.getConstInt(builder, 2))
+                              ))));
+    @test string(get(builder)) == """
+Float64 (Int32 %0) {
+L0:
+  Float64 %1 = call sin(Int32 %0)
+  Int32 %2 = mul Int32 %0, Int32 2
+  Float64 %3 = call sin(Int32 %2)
+  Float64 %4 = add Float64 %1, Float64 %3
+  ret Float64 %4
+}
+"""
+end
+
+@testset "Serialize" begin
+    data = Int32[3, 2, 6, 50529027, 771, 1, 3, 0, 1073741824, 1, 14, 5,
+                 5, 0, -3, 3, 4, 5, -3, 3, 2, 3, 1, 1, 2]
+    func = read(IOBuffer(reinterpret(UInt8, data)), IR.Func)
+    @test string(func) == """
+Float64 (Float64 %0, Float64 %1) {
+L0:
+  Float64 %5 = mul Float64 %0, Float64 2.0
+  Float64 %4 = add Float64 %5, Float64 2.0
+  Float64 %2 = add Float64 %3, Float64 %1
+  ret Float64 %2
+}
+"""
+    io = IOBuffer()
+    write(io, func)
+    @test reinterpret(Int32, take!(io)) == data
+
+    data = Int32[3, 2, 7, 50529027, 197379, 2, 3, 0, 1072693248, 3, 0,
+                 1073741824, 1, 22, 4, 5, -3, 0, 5, 4, -3, 5, 5, 6, -4, 0, 3, 3,
+                 4, 6, 6, 2, 3, -3, 1, 2]
+    func = read(IOBuffer(reinterpret(UInt8, data)), IR.Func)
+    @test string(func) == """
+Float64 (Float64 %0, Float64 %1) {
+L0:
+  Float64 %5 = sub Float64 1.0, Float64 %0
+  Float64 %4 = mul Float64 1.0, Float64 %5
+  Float64 %6 = mul Float64 2.0, Float64 %0
+  Float64 %3 = add Float64 %4, Float64 %6
+  Float64 %2 = fdiv Float64 %3, Float64 1.0
+  ret Float64 %2
+}
+"""
+    io = IOBuffer()
+    write(io, func)
+    @test reinterpret(Int32, take!(io)) == data
+end

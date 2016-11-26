@@ -483,6 +483,11 @@ function Base.write(io::IO, func::Func)
     copy_vector = function (vec)
         write(io, Int32(length(vec)))
         write(io, vec)
+        pad = mod(-sizeof(vec), 4)
+        for i in 1:pad
+            write(io, Int8(0))
+        end
+        return
     end
     copy_vector(func.vals)
     write(io, Int32(length(func.consts)))
@@ -504,6 +509,11 @@ function Base.read(io::IO, ::Type{Func})
         sz = read(io, Int32)
         resize!(vec, sz)
         read!(io, vec)
+        pad = mod(-(sz * sizeof(eltype(vec))), 4)
+        if pad != 0
+            skip(io, pad)
+        end
+        return
     end
     read_vector(func.vals)
     nconsts = read(io, Int32)
@@ -524,6 +534,7 @@ function Base.read(io::IO, ::Type{Func})
         end
         read_vector(bb)
     end
+    return func
 end
 
 type Builder
