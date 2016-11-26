@@ -277,3 +277,17 @@ L0:
     write(io, func)
     @test take_i32(io) == data
 end
+
+@testset "Names" begin
+    @test IR.typeName(IR.Value.Float64) === :Float64
+    @test IR.typeName(IR.Value.Type(-1)) === :Bottom
+
+    @test IR.opName(IR.OP.ret) === :ret
+    @test IR.opName(IR.OP.Type(-1)) === :unknown
+
+    @test IR.cmpName(IR.Cmp.eq) === :eq
+    @test IR.cmpName(IR.Cmp.Type(-1)) === :unknown
+
+    @test IR.builtinName(IR.Builtin.sin) === :sin
+    @test IR.builtinName(IR.Builtin.Id(-1)) === :unknown
+end
