@@ -171,6 +171,12 @@ L0:
 end
 
 @testset "Serialize" begin
+    take_i32 = if VERSION >= v"0.6.0-dev.1256"
+        x->reinterpret(Int32, take!(x))
+    else
+        x->reinterpret(Int32, takebuf_array(x))
+    end
+
     data = Int32[3, 2, 6, 50529027, 771, 1, 3, 0, 1073741824, 1, 14, 5,
                  5, 0, -3, 3, 4, 5, -3, 3, 2, 3, 1, 1, 2]
     func = read(IOBuffer(reinterpret(UInt8, data)), IR.Func)
@@ -185,7 +191,7 @@ L0:
 """
     io = IOBuffer()
     write(io, func)
-    @test reinterpret(Int32, take!(io)) == data
+    @test take_i32(io) == data
 
     data = Int32[3, 2, 7, 50529027, 197379, 2, 3, 0, 1072693248, 3, 0,
                  1073741824, 1, 22, 4, 5, -3, 0, 5, 4, -3, 5, 5, 6, -4, 0, 3, 3,
@@ -204,5 +210,5 @@ L0:
 """
     io = IOBuffer()
     write(io, func)
-    @test reinterpret(Int32, take!(io)) == data
+    @test take_i32(io) == data
 end
